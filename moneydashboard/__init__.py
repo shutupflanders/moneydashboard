@@ -1,0 +1,1 @@
+from .moneydashboard import MoneyDashboard
