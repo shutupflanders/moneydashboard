@@ -4,11 +4,22 @@ import logging
 import json
 from decimal import Decimal
 
+
+class LoginFailedException(Exception):
+    pass
+
+
+class GetAccountsListFailedException(Exception):
+    pass
+
+
 class MoneyDashboard():
 
     def __init__(self, session=None, email=None, password=None):
         self.__session = session
         self.__logger = logging.getLogger()
+        self._email = email
+        self._password = password
 
     def get_session(self):
         return self.__session
@@ -16,15 +27,15 @@ class MoneyDashboard():
     def set_session(self, session):
         self.__session = session
 
-    def login(self, email, password):
+    def login(self):
         self.__logger.info('Logging in...')
         """Login to Moneydashboard using the credentials provided in config"""
         url = "https://my.moneydashboard.com/landing/login"
 
         payload = {
             "OriginId": "1",
-            "Email": email,
-            "Password": password,
+            "Email": self._email,
+            "Password": self._password,
             "CampaignRef": "",
             "ApplicationRef": "",
             "UserRef": ""
@@ -55,20 +66,19 @@ class MoneyDashboard():
             response.raise_for_status()
         except HTTPError as http_err:
             self.__logger.error(f'[HTTP Error]: Failed to login ({http_err})')
-            raise SystemExit
+            raise LoginFailedException
         except Exception as err:
             self.__logger.error(f'[Error]: Failed to login ({err})')
-            raise SystemExit
+            raise LoginFailedException
         else:
             response_data = response.json()
             if response_data["IsSuccess"] is True:
                 return response_data['IsSuccess']
             else:
                 self.__logger.error(f'[Error]: Failed to login ({response_data["ErrorCode"]})')
-                raise SystemExit
+                raise LoginFailedException
 
-
-    def getAccounts(self):
+    def get_accounts(self):
         self.__logger.info('Getting Accounts...')
         """Retrieve account list from MoneyDashboard account"""
         url = "https://my.moneydashboard.com/api/Account/"
@@ -89,25 +99,21 @@ class MoneyDashboard():
             'Accept-Encoding': 'gzip, deflate, br',
             'Accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8,it;q=0.7',
         }
-
-        if self.get_session() is None:
-            self.login()
-
+        """Session expires every 10 minutes or so, so we'll login again anyway."""
+        self.login()
         try:
             response = self.get_session().request("GET", url, headers=headers)
             response.raise_for_status()
         except HTTPError as http_err:
             self.__logger.error(f'[HTTP Error]: Failed to get Account List ({http_err})')
-            raise SystemExit
+            raise GetAccountsListFailedException
         except Exception as err:
             self.__logger.error(f'[Error]: Failed to get Account List ({err})')
-            raise SystemExit
+            raise GetAccountsListFailedException
         else:
             return response.json()
 
-    def getBalances(self):
-        TWOPLACES = Decimal(10) ** -2
-        
+    def get_balances(self):
         balance = {
             "net_balance": Decimal(0.00),
             "positive_balance": Decimal(0.00),
@@ -115,7 +121,7 @@ class MoneyDashboard():
         }
         balances = []
 
-        accounts = self.getAccounts()
+        accounts = self.get_accounts()
         for account in accounts:
             if account['IsClosed'] is not True:
                 if account["IsIncludedInCashflow"] is True:
