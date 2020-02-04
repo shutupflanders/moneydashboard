@@ -136,13 +136,13 @@ class MoneyDashboard():
                 balances.append({
                     "operator": account["Institution"]["Name"],
                     "name": account["Name"],
-                    "balance": self.moneyfmt(Decimal(account["Balance"])),
+                    "balance": float(self.moneyfmt(Decimal(account["Balance"]), 2, '', '')),
                     "last_update": account["LastRefreshed"]
                 })
 
-        balance['net_balance'] = self.moneyfmt(Decimal(balance['net_balance']))
-        balance['positive_balance'] = self.moneyfmt(Decimal(balance['positive_balance']))
-        balance['negative_balance'] = self.moneyfmt(Decimal(balance['negative_balance']))
+        balance['net_balance'] = float(self.moneyfmt(Decimal(balance['net_balance']), 2, '', ''))
+        balance['positive_balance'] = float(self.moneyfmt(Decimal(balance['positive_balance']), 2, '', ''))
+        balance['negative_balance'] = float(self.moneyfmt(Decimal(balance['negative_balance']), 2, '', ''))
         balance['balances'] = balances
 
         return json.dumps(balance)
