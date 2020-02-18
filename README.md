@@ -27,7 +27,7 @@ then either include the library into your code, or install it with:
 You need to first create an instance.
 
 ```python
-md = MoneyDashboard(email, password)
+md = MoneyDashboard(email="myemail@email.com", password="MyPassword123")
 ```
 
 Once authenticated, you can start fetching data from the MoneyDashboard API.
