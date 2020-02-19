@@ -31,9 +31,10 @@ md = MoneyDashboard(email="myemail@email.com", password="MyPassword123")
 ```
 
 Once authenticated, you can start fetching data from the MoneyDashboard API.
+It will return data as a JSON string so you'll have to parse the result as follows:
 
 ```python
-balances = md.getBalances()
+balances = json.loads(md.get_balances())
 ```
 
 The above request will load your accounts data, and with that response you can get your balances.
