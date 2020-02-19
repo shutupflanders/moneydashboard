@@ -124,7 +124,7 @@ class MoneyDashboard():
         accounts = self.get_accounts()
         for account in accounts:
             if account['IsClosed'] is not True:
-                if account["IsIncludedInCashflow"] is True:
+                if account["IncludeInCalculations"] is True:
                     bal = Decimal(account['Balance'])
                     if account["Balance"] >=0:
                         balance["positive_balance"] += bal
