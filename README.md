@@ -1,5 +1,7 @@
 # MoneyDashboard
 
+[![Buy me a coffee][buymeacoffee-shield]][buymeacoffee]
+
 Python library for accessing MoneyDashboard data
 
 # Installation
@@ -42,3 +44,6 @@ The above request will load your accounts data, and with that response you can g
 ```python
 print('Net Balance: ', balances['net_balance'])
 ```
+
+[buymeacoffee-shield]: https://www.buymeacoffee.com/assets/img/guidelines/download-assets-sm-2.svg
+[buymeacoffee]: https://www.buymeacoffee.com/IcV9egW
