@@ -1,2 +1,2 @@
-requests==2.22.0
-decimal
+requests==2.18.4
+beautifulsoup4==4.8.2
