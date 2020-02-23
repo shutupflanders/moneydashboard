@@ -4,6 +4,7 @@ from babel.numbers import format_currency
 import logging
 import json
 from decimal import Decimal
+from bs4 import BeautifulSoup
 
 
 class LoginFailedException(Exception):
@@ -21,6 +22,7 @@ class MoneyDashboard():
         self._email = email
         self._password = password
         self._currency = currency
+        self._requestVerificationToken = ""
 
     def get_session(self):
         return self.__session
@@ -30,38 +32,46 @@ class MoneyDashboard():
 
     def login(self):
         self.__logger.info('Logging in...')
+
+        self.set_session(requests.session())
+
+        landing_url = "https://my.moneydashboard.com/landing"
+        landing_response = self.get_session().request("GET", landing_url)
+        soup = BeautifulSoup(landing_response.text, "html.parser")
+        self._requestVerificationToken = soup.find("input", {"name": "__RequestVerificationToken"})['value']
+
+        cookies = self.get_session().cookies.get_dict()
+        cookie_string = "; ".join([str(x) + "=" + str(y) for x, y in cookies.items()])
+
+        self.set_session(requests.session())
         """Login to Moneydashboard using the credentials provided in config"""
         url = "https://my.moneydashboard.com/landing/login"
 
         payload = {
             "OriginId": "1",
-            "Email": self._email,
             "Password": self._password,
+            "Email": self._email,
             "CampaignRef": "",
             "ApplicationRef": "",
             "UserRef": ""
         }
         headers = {
-            "Authority": "my.moneydashboard.com",
             'Origin': 'https://my.moneydashboard.com',
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) \
-            Chrome/78.0.3904.70 Safari/537.36',
+            Chrome/79.0.3945.88 Safari/537.36',
             'Content-Type': 'application/json;charset=UTF-8',
             'Accept': 'application/json, text/plain, */*',
             'X-Requested-With': 'XMLHttpRequest',
-            '__requestverificationtoken': 'KXU5u0kZUP9xkqB4dttI43vaUBhtUGrwlW1Y6mqn_4rVAXsM8WdA\
-            -XBLWbHuQeexS4m1zLKNsKfy1WCQyx2oPO20tik1',
+            "X-Newrelic-Id": "UA4AV1JTGwAJU1BaDgc=",
+            '__requestverificationtoken': self._requestVerificationToken,
             'Dnt': '1',
             'Sec-Fetch-Site': 'same-origin',
             'Sec-Fetch-Mode': 'cors',
             'Referer': 'https://my.moneydashboard.com/landing',
             'Accept-Encoding': 'gzip, deflate, br',
             'Accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8,it;q=0.7',
-            'Cookie': 'hasUser=true; __RequestVerificationToken=AGq1bYzUaMxnUC3pAi2sVxfoS5Ea3Ujl6tn3\
-            g2aoooYsx2s3g1KZTdci4da6wkHVL3liXI4g-kLlyoAn2p0vcB4lmM41; AWSALB=3kABtlACp8CGnHsB881VtHMYz\
-            sQ6lJDCNMZSTod84LMWzx4FdC1Mc0vOVg8FnifGX1mn59meREwM3D/zPl78ZoQ4Q34v5O1lpHJ6bX95PH2UnsRBfKagE1neZnK4',
+            'Cookie': cookie_string,
         }
-        self.set_session(requests.session())
         try:
             response = self.get_session().request("POST", url, json=payload, headers=headers)
             response.raise_for_status()
@@ -81,6 +91,10 @@ class MoneyDashboard():
 
     def get_accounts(self):
         self.__logger.info('Getting Accounts...')
+
+        """Session expires every 10 minutes or so, so we'll login again anyway."""
+        self.login()
+
         """Retrieve account list from MoneyDashboard account"""
         url = "https://my.moneydashboard.com/api/Account/"
 
@@ -90,8 +104,7 @@ class MoneyDashboard():
             "X-Newrelic-Id": "UA4AV1JTGwAJU1BaDgc=",
             'Dnt': '1',
             'X-Requested-With': 'XMLHttpRequest',
-            '__requestverificationtoken': 'qY38K1qoy_1nrAHrOdHs-GW_nnjkDoN65ixTassq76TN4Kjuoi-DRz\
-            Kx4AjHgStx9CL2gBOGZqEWAl9yBbYquHwFc7QUBT0NlbziXOcQV2kjfn7Xvtu1o71VlJXtpSLYiB8Yxg2',
+            '__requestverificationtoken': self._requestVerificationToken,
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) C\
             hrome/78.0.3904.70 Safari/537.36',
             'Sec-Fetch-Site': 'same-origin',
@@ -100,8 +113,6 @@ class MoneyDashboard():
             'Accept-Encoding': 'gzip, deflate, br',
             'Accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8,it;q=0.7',
         }
-        """Session expires every 10 minutes or so, so we'll login again anyway."""
-        self.login()
         try:
             response = self.get_session().request("GET", url, headers=headers)
             response.raise_for_status()
@@ -135,7 +146,7 @@ class MoneyDashboard():
             if account['IsClosed'] is not True:
                 if account["IncludeInCalculations"] is True:
                     bal = Decimal(account['Balance'])
-                    if account["Balance"] >=0:
+                    if account["Balance"] >= 0:
                         balance["positive_balance"] += bal
                     else:
                         balance["negative_balance"] += bal
