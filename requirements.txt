@@ -1,2 +1,2 @@
-requests==2.22.0
-decimal
+Babel==2.5.3
+requests==2.18.4
