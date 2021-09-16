@@ -1,5 +1,6 @@
 import requests
 from requests.exceptions import HTTPError
+from babel.numbers import format_currency
 import logging
 import json
 from decimal import Decimal
@@ -15,12 +16,12 @@ class GetAccountsListFailedException(Exception):
 
 
 class MoneyDashboard():
-
-    def __init__(self, session=None, email=None, password=None):
+    def __init__(self, session=None, email=None, password=None, currency="GBP"):
         self.__session = session
         self.__logger = logging.getLogger()
         self._email = email
         self._password = password
+        self._currency = currency
         self._requestVerificationToken = ""
 
     def get_session(self):
@@ -124,13 +125,21 @@ class MoneyDashboard():
         else:
             return response.json()
 
+    def _money_fmt(self, balance):
+        return format_currency(Decimal(balance), self._currency, locale='en_GB')
+
     def get_balances(self):
         balance = {
             "net_balance": Decimal(0.00),
             "positive_balance": Decimal(0.00),
             "negative_balance": Decimal(0.00),
         }
-        balances = []
+
+        current_accounts_balances = []
+        credit_cards_balances = []
+        saving_goals_balances = []
+        other_accounts_balances = []
+        unknown_balances = []
 
         accounts = self.get_accounts()
         for account in accounts:
@@ -144,55 +153,35 @@ class MoneyDashboard():
 
                     balance['net_balance'] += bal
 
-                balances.append({
+                balance_obj = {
                     "operator": account["Institution"]["Name"],
                     "name": account["Name"],
-                    "balance": float(self.moneyfmt(Decimal(account["Balance"]), 2, '', '')),
+                    "balance": self._money_fmt(account["Balance"]),
                     "last_update": account["LastRefreshed"]
-                })
+                }
 
-        balance['net_balance'] = float(self.moneyfmt(Decimal(balance['net_balance']), 2, '', ''))
-        balance['positive_balance'] = float(self.moneyfmt(Decimal(balance['positive_balance']), 2, '', ''))
-        balance['negative_balance'] = float(self.moneyfmt(Decimal(balance['negative_balance']), 2, '', ''))
-        balance['balances'] = balances
+                if account["AccountTypeId"] == 0:
+                    current_accounts_balances.append(balance_obj)
+                elif account["AccountTypeId"] == 2:
+                    credit_cards_balances.append(balance_obj)
+                elif account["AccountTypeId"] == 3:
+                    other_accounts_balances.append(balance_obj)
+                elif account["AccountTypeId"] == 4:
+                    saving_goals_balances.append(balance_obj)
+                else:
+                    unknown_balances.append(balance_obj)
+
+        acct_balances = {
+            "current_accounts": current_accounts_balances,
+            "credit_cards": credit_cards_balances,
+            "other_accounts": other_accounts_balances,
+            "saving_goals": saving_goals_balances,
+            "unknown": unknown_balances,
+        }
+
+        balance['net_balance'] = self._money_fmt(balance['net_balance'])
+        balance['positive_balance'] = self._money_fmt(balance['positive_balance'])
+        balance['negative_balance'] = self._money_fmt(balance['negative_balance'])
+        balance['balances'] = acct_balances
 
         return json.dumps(balance)
-
-    def moneyfmt(self, value, places=2, curr='', sep=',', dp='.',
-                 pos='', neg='-', trailneg=''):
-        """Convert Decimal to a money formatted string.
-
-        places:  required number of places after the decimal point
-        curr:    optional currency symbol before the sign (may be blank)
-        sep:     optional grouping separator (comma, period, space, or blank)
-        dp:      decimal point indicator (comma or period)
-                 only specify as blank when places is zero
-        pos:     optional sign for positive numbers: '+', space or blank
-        neg:     optional sign for negative numbers: '-', '(', space or blank
-        trailneg:optional trailing minus indicator:  '-', ')', space or blank
-
-
-        """
-        q = Decimal(10) ** -places  # 2 places --> '0.01'
-        sign, digits, exp = value.quantize(q).as_tuple()
-        result = []
-        digits = list(map(str, digits))
-        build, next = result.append, digits.pop
-        if sign:
-            build(trailneg)
-        for i in range(places):
-            build(next() if digits else '0')
-        if places:
-            build(dp)
-        if not digits:
-            build('0')
-        i = 0
-        while digits:
-            build(next())
-            i += 1
-            if i == 3 and digits:
-                i = 0
-                build(sep)
-        build(curr)
-        build(neg if sign else pos)
-        return ''.join(reversed(result))
