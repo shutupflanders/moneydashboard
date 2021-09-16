@@ -3,8 +3,10 @@ from requests.exceptions import HTTPError
 from babel.numbers import format_currency, format_decimal
 import logging
 import json
+import re
 from decimal import Decimal
 from bs4 import BeautifulSoup
+from datetime import datetime, timedelta, timezone
 
 
 class LoginFailedException(Exception):
@@ -12,6 +14,13 @@ class LoginFailedException(Exception):
 
 
 class GetAccountsListFailedException(Exception):
+    pass
+
+
+class GetTransactionListFailedException(Exception):
+    pass
+
+class InvalidTransactionListTypeFilter(Exception):
     pass
 
 class MoneyDashboard:
@@ -25,6 +34,13 @@ class MoneyDashboard:
 
         self._currency = currency
         self._formatAsCurrency = format_as_currency
+        self._accounts = self._get_accounts()
+        self._transactionFilterTypes = {
+            1: "Last 7 Days",
+            2: "Since Last Login",
+            3: "All Untagged"
+        }
+        datetime.now(timezone.utc)
 
     def _get_session(self):
         return self.__session
@@ -91,16 +107,8 @@ class MoneyDashboard:
                 self.__logger.error(f'[Error]: Failed to login ({response_data["ErrorCode"]})')
                 raise LoginFailedException
 
-    def _get_accounts(self):
-        self.__logger.info('Getting Accounts...')
-
-        """Session expires every 10 minutes or so, so we'll login again anyway."""
-        self._login()
-
-        """Retrieve account list from MoneyDashboard account"""
-        url = "https://my.moneydashboard.com/api/Account/"
-
-        headers = {
+    def _get_headers(self):
+        return {
             "Authority": "my.moneydashboard.com",
             'Accept': 'application/json, text/plain, */*',
             "X-Newrelic-Id": "UA4AV1JTGwAJU1BaDgc=",
@@ -115,6 +123,17 @@ class MoneyDashboard:
             'Accept-Encoding': 'gzip, deflate, br',
             'Accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8,it;q=0.7',
         }
+
+    def _get_accounts(self):
+        self.__logger.info('Getting Accounts...')
+
+        """Session expires every 10 minutes or so, so we'll login again anyway."""
+        self._login()
+
+        """Retrieve account list from MoneyDashboard account"""
+        url = "https://my.moneydashboard.com/api/Account/"
+
+        headers = self._get_headers()
         try:
             response = self._get_session().request("GET", url, headers=headers)
             response.raise_for_status()
@@ -125,11 +144,61 @@ class MoneyDashboard:
             self.__logger.error(f'[Error]: Failed to get Account List ({err})')
             raise GetAccountsListFailedException
         else:
+            accounts = {}
+            for account in response.json():
+                accounts[account["Id"]] = account
+            return accounts
+
+
+    def _get_transactions(self, type: int):
+        if type not in self._transactionFilterTypes:
+            self.__logger.error('Invalid Transaction Filter.')
+            raise InvalidTransactionListTypeFilter
+
+        self.__logger.info('Getting Transactions...')
+
+        """Session expires every 10 minutes or so, so we'll login again anyway."""
+        self._login()
+
+        """Retrieve account list from MoneyDashboard account"""
+        url = "https://my.moneydashboard.com/dashboard/GetWidgetTransactions?filter=" + str(type)
+
+        headers = self._get_headers()
+        try:
+            response = self._get_session().request("GET", url, headers=headers)
+            response.raise_for_status()
+        except HTTPError as http_err:
+            self.__logger.error(f'[HTTP Error]: Failed to get Transaction List ({http_err})')
+            raise GetTransactionListFailedException
+        except Exception as err:
+            self.__logger.error(f'[Error]: Failed to get Transaction List ({err})')
+            raise GetTransactionListFailedException
+        else:
             return response.json()
 
     def _money_fmt(self, balance):
-        return format_currency(Decimal(balance), self._currency,
-                               locale='en_GB') if self._formatAsCurrency else format_decimal(Decimal(balance))
+        return format_currency(
+            Decimal(balance),
+            self._currency,
+            locale='en_GB'
+        ) if self._formatAsCurrency else format_decimal(Decimal(balance))
+
+    def _parse_wcf_date(self, time_string):
+        epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        ticks, offset = re.match(r'/Date\((\d+)([+-]\d{4})?\)/$', time_string).groups()
+        utc_dt = epoch + timedelta(milliseconds=int(ticks))
+        if offset:
+            offset = int(offset)
+            # http://www.odata.org/documentation/odata-version-2-0/json-format
+            # says offset is minutes (an error?)
+            dt = utc_dt.astimezone(timezone(timedelta(minutes=offset)))
+            # but it looks like it could be HHMM
+            hours, minutes = divmod(abs(offset), 100)
+            if offset < 0:
+                hours, minutes = -hours, -minutes
+            dt = utc_dt.astimezone(timezone(timedelta(hours=hours, minutes=minutes)))
+            return dt.strftime("%Y/%m/%d, %H:%M:%S")
+        return utc_dt
 
     def get_balances(self):
         balance = {
@@ -145,8 +214,8 @@ class MoneyDashboard:
         other_accounts_balances = []
         unknown_balances = []
 
-        accounts = self._get_accounts()
-        for account in accounts:
+        accounts = self._accounts
+        for index, account in accounts.items():
             if account['IsClosed'] is not True:
                 if account["IsIncludedInCashflow"] is True and account["IncludeInCalculations"] is True:
                     bal = Decimal(account['Balance'])
@@ -191,3 +260,21 @@ class MoneyDashboard:
         }
 
         return json.dumps(balance)
+
+    def get_transactions(self, type):
+        transactions = self._get_transactions(type)
+
+        transaction_list = []
+        for transaction in transactions:
+            transaction_list.append({
+                "date": self._parse_wcf_date(transaction["Date"]),
+                "account": self._accounts[transaction["AccountId"]]["Institution"]["Name"]
+                           + " - "
+                           + self._accounts[transaction["AccountId"]]["Name"]
+                if transaction["AccountId"] in self._accounts else "Unknown",
+                "type": "Debit" if transaction["IsDebit"] else "Credit",
+                "amount": self._money_fmt(transaction["Amount"]),
+                "currency": transaction["NativeCurrency"]
+            })
+
+        return json.dumps(transaction_list, default=str)
