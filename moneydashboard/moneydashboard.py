@@ -16,34 +16,36 @@ class GetAccountsListFailedException(Exception):
 
 
 class MoneyDashboard():
-    def __init__(self, session=None, email=None, password=None, currency="GBP"):
-        self.__session = session
+    def __init__(self, email, password, currency="GBP"):
         self.__logger = logging.getLogger()
-        self._email = email
-        self._password = password
-        self._currency = currency
+        self.__session = None
         self._requestVerificationToken = ""
 
-    def get_session(self):
+        self._email = email
+        self._password = password
+
+        self._currency = currency
+
+    def _get_session(self):
         return self.__session
 
-    def set_session(self, session):
+    def _set_session(self, session):
         self.__session = session
 
-    def login(self):
+    def _login(self):
         self.__logger.info('Logging in...')
 
-        self.set_session(requests.session())
+        self._set_session(requests.session())
 
         landing_url = "https://my.moneydashboard.com/landing"
-        landing_response = self.get_session().request("GET", landing_url)
+        landing_response = self._get_session().request("GET", landing_url)
         soup = BeautifulSoup(landing_response.text, "html.parser")
         self._requestVerificationToken = soup.find("input", {"name": "__RequestVerificationToken"})['value']
 
-        cookies = self.get_session().cookies.get_dict()
+        cookies = self._get_session().cookies.get_dict()
         cookie_string = "; ".join([str(x) + "=" + str(y) for x, y in cookies.items()])
 
-        self.set_session(requests.session())
+        self._set_session(requests.session())
         """Login to Moneydashboard using the credentials provided in config"""
         url = "https://my.moneydashboard.com/landing/login"
 
@@ -73,7 +75,7 @@ class MoneyDashboard():
             'Cookie': cookie_string,
         }
         try:
-            response = self.get_session().request("POST", url, json=payload, headers=headers)
+            response = self._get_session().request("POST", url, json=payload, headers=headers)
             response.raise_for_status()
         except HTTPError as http_err:
             self.__logger.error(f'[HTTP Error]: Failed to login ({http_err})')
@@ -89,11 +91,11 @@ class MoneyDashboard():
                 self.__logger.error(f'[Error]: Failed to login ({response_data["ErrorCode"]})')
                 raise LoginFailedException
 
-    def get_accounts(self):
+    def _get_accounts(self):
         self.__logger.info('Getting Accounts...')
 
         """Session expires every 10 minutes or so, so we'll login again anyway."""
-        self.login()
+        self._login()
 
         """Retrieve account list from MoneyDashboard account"""
         url = "https://my.moneydashboard.com/api/Account/"
@@ -114,7 +116,7 @@ class MoneyDashboard():
             'Accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8,it;q=0.7',
         }
         try:
-            response = self.get_session().request("GET", url, headers=headers)
+            response = self._get_session().request("GET", url, headers=headers)
             response.raise_for_status()
         except HTTPError as http_err:
             self.__logger.error(f'[HTTP Error]: Failed to get Account List ({http_err})')
@@ -141,7 +143,7 @@ class MoneyDashboard():
         other_accounts_balances = []
         unknown_balances = []
 
-        accounts = self.get_accounts()
+        accounts = self._get_accounts()
         for account in accounts:
             if account['IsClosed'] is not True:
                 if account["IsIncludedInCashflow"] is True and account["IncludeInCalculations"] is True:
