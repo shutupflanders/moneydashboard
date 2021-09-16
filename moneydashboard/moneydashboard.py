@@ -1,6 +1,6 @@
 import requests
 from requests.exceptions import HTTPError
-from babel.numbers import format_currency
+from babel.numbers import format_currency, format_decimal
 import logging
 import json
 from decimal import Decimal
@@ -14,9 +14,8 @@ class LoginFailedException(Exception):
 class GetAccountsListFailedException(Exception):
     pass
 
-
-class MoneyDashboard():
-    def __init__(self, email, password, currency="GBP"):
+class MoneyDashboard:
+    def __init__(self, email, password, currency="GBP", format_as_currency=True):
         self.__logger = logging.getLogger()
         self.__session = None
         self._requestVerificationToken = ""
@@ -25,6 +24,7 @@ class MoneyDashboard():
         self._password = password
 
         self._currency = currency
+        self._formatAsCurrency = format_as_currency
 
     def _get_session(self):
         return self.__session
@@ -128,7 +128,8 @@ class MoneyDashboard():
             return response.json()
 
     def _money_fmt(self, balance):
-        return format_currency(Decimal(balance), self._currency, locale='en_GB')
+        return format_currency(Decimal(balance), self._currency,
+                               locale='en_GB') if self._formatAsCurrency else format_decimal(Decimal(balance))
 
     def get_balances(self):
         balance = {
@@ -140,6 +141,7 @@ class MoneyDashboard():
         current_accounts_balances = []
         credit_cards_balances = []
         saving_goals_balances = []
+        savings_accounts_balances = []
         other_accounts_balances = []
         unknown_balances = []
 
@@ -159,11 +161,14 @@ class MoneyDashboard():
                     "operator": account["Institution"]["Name"],
                     "name": account["Name"],
                     "balance": self._money_fmt(account["Balance"]),
+                    "currency": self._currency,
                     "last_update": account["LastRefreshed"]
                 }
 
                 if account["AccountTypeId"] == 0:
                     current_accounts_balances.append(balance_obj)
+                elif account["AccountTypeId"] == 1:
+                    savings_accounts_balances.append(balance_obj)
                 elif account["AccountTypeId"] == 2:
                     credit_cards_balances.append(balance_obj)
                 elif account["AccountTypeId"] == 3:
@@ -173,17 +178,16 @@ class MoneyDashboard():
                 else:
                     unknown_balances.append(balance_obj)
 
-        acct_balances = {
+        balance['net_balance'] = self._money_fmt(balance['net_balance'])
+        balance['positive_balance'] = self._money_fmt(balance['positive_balance'])
+        balance['negative_balance'] = self._money_fmt(balance['negative_balance'])
+        balance['balances'] = {
             "current_accounts": current_accounts_balances,
             "credit_cards": credit_cards_balances,
             "other_accounts": other_accounts_balances,
             "saving_goals": saving_goals_balances,
+            "savings_accounts": savings_accounts_balances,
             "unknown": unknown_balances,
         }
-
-        balance['net_balance'] = self._money_fmt(balance['net_balance'])
-        balance['positive_balance'] = self._money_fmt(balance['positive_balance'])
-        balance['negative_balance'] = self._money_fmt(balance['negative_balance'])
-        balance['balances'] = acct_balances
 
         return json.dumps(balance)
