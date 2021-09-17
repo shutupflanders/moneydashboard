@@ -198,7 +198,8 @@ class MoneyDashboard:
             else format_decimal(Decimal(balance))
         )
 
-    def _parse_wcf_date(self, time_string):
+    @staticmethod
+    def parse_wcf_date(time_string):
         epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
         ticks, offset = re.match(r"/Date\((\d+)([+-]\d{4})?\)/$", time_string).groups()
         utc_dt = epoch + timedelta(milliseconds=int(ticks))
@@ -286,7 +287,7 @@ class MoneyDashboard:
         for transaction in transactions:
             transaction_list.append(
                 {
-                    "date": self._parse_wcf_date(transaction["Date"]),
+                    "date": self.parse_wcf_date(transaction["Date"]),
                     "account": self._accounts[transaction["AccountId"]]["Institution"][
                         "Name"
                     ]
