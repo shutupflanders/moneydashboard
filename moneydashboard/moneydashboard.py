@@ -67,7 +67,7 @@ class MoneyDashboard:
         cookie_string = "; ".join([str(x) + "=" + str(y) for x, y in cookies.items()])
 
         self._set_session(requests.session())
-        """Login to Moneydashboard using the credentials provided in config"""
+        # Login to Moneydashboard using the credentials provided in config
         url = "https://my.moneydashboard.com/landing/login"
 
         payload = {
@@ -101,18 +101,18 @@ class MoneyDashboard:
             )
             response.raise_for_status()
         except HTTPError as http_err:
-            self.__logger.error(f"[HTTP Error]: Failed to login ({http_err})")
-            raise LoginFailedException
+            self.__logger.error("[HTTP Error]: Failed to login (%s)", http_err)
+            raise LoginFailedException from http_err
         except Exception as err:
-            self.__logger.error(f"[Error]: Failed to login ({err})")
-            raise LoginFailedException
+            self.__logger.error("[Error]: Failed to login (%s)", err)
+            raise LoginFailedException from err
         else:
             response_data = response.json()
             if response_data["IsSuccess"] is True:
                 return response_data["IsSuccess"]
             else:
                 self.__logger.error(
-                    f'[Error]: Failed to login ({response_data["ErrorCode"]})'
+                    "[Error]: Failed to login (%s)", response_data["ErrorCode"]
                 )
                 raise LoginFailedException
 
@@ -134,12 +134,12 @@ class MoneyDashboard:
         }
 
     def _get_accounts(self):
+        """Retrieve account list from MoneyDashboard account"""
         self.__logger.info("Getting Accounts...")
 
-        """Session expires every 10 minutes or so, so we'll login again anyway."""
+        # Session expires every 10 minutes or so, so we'll login again anyway.
         self._login()
 
-        """Retrieve account list from MoneyDashboard account"""
         url = "https://my.moneydashboard.com/api/Account/"
 
         headers = self._get_headers()
@@ -148,12 +148,12 @@ class MoneyDashboard:
             response.raise_for_status()
         except HTTPError as http_err:
             self.__logger.error(
-                f"[HTTP Error]: Failed to get Account List ({http_err})"
+                "[HTTP Error]: Failed to get Account List (%s)", http_err
             )
-            raise GetAccountsListFailedException
+            raise GetAccountsListFailedException from http_err
         except Exception as err:
-            self.__logger.error(f"[Error]: Failed to get Account List ({err})")
-            raise GetAccountsListFailedException
+            self.__logger.error("[Error]: Failed to get Account List (%s)", err)
+            raise GetAccountsListFailedException from err
         else:
             accounts = {}
             for account in response.json():
@@ -161,16 +161,16 @@ class MoneyDashboard:
             return accounts
 
     def _get_transactions(self, type: int):
+        """Retrieve transactions from MoneyDashboard account"""
         if type not in self._transactionFilterTypes:
             self.__logger.error("Invalid Transaction Filter.")
             raise InvalidTransactionListTypeFilter
 
         self.__logger.info("Getting Transactions...")
 
-        """Session expires every 10 minutes or so, so we'll login again anyway."""
+        # Session expires every 10 minutes or so, so we'll login again anyway.
         self._login()
 
-        """Retrieve account list from MoneyDashboard account"""
         url = (
             "https://my.moneydashboard.com/dashboard/GetWidgetTransactions?filter="
             + str(type)
@@ -182,12 +182,12 @@ class MoneyDashboard:
             response.raise_for_status()
         except HTTPError as http_err:
             self.__logger.error(
-                f"[HTTP Error]: Failed to get Transaction List ({http_err})"
+                "[HTTP Error]: Failed to get Transaction List (%s)", http_err
             )
-            raise GetTransactionListFailedException
+            raise GetTransactionListFailedException from http_err
         except Exception as err:
-            self.__logger.error(f"[Error]: Failed to get Transaction List ({err})")
-            raise GetTransactionListFailedException
+            self.__logger.error("[Error]: Failed to get Transaction List (%s)", err)
+            raise GetTransactionListFailedException from err
         else:
             return response.json()
 
@@ -230,7 +230,7 @@ class MoneyDashboard:
         unknown_balances = []
 
         accounts = self._accounts
-        for index, account in accounts.items():
+        for _, account in accounts.items():
             if account["IsClosed"] is not True:
                 if (
                     account["IsIncludedInCashflow"] is True
